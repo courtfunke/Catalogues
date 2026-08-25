@@ -1,146 +1,151 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Drag & Drop Sequence Game</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sequencing Game</title>
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     body {
-      background-color: #f4f6f9;
-      display: flex;
-      justify-content: center;
-      align-items: center;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #f4f6f8;
       padding: 20px;
       transition: background-color 0.5s ease;
     }
 
     body.victory {
-      background-color: #d4edda;
+      background-color: #2ecc71;
     }
 
     .container {
-      background: #ffffff;
+      width: 100%;
+      max-width: 500px;
+      background: white;
       padding: 30px;
       border-radius: 12px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-      max-width: 500px;
-      width: 100%;
       text-align: center;
     }
 
     h1 {
       font-size: 1.5rem;
-      color: #333;
-      margin-bottom: 10px;
+      color: #2c3e50;
+      margin-bottom: 8px;
     }
 
     p.instructions {
+      color: #7f8c8d;
       font-size: 0.95rem;
-      color: #666;
       margin-bottom: 20px;
     }
 
     .timer {
       font-size: 1.2rem;
       font-weight: bold;
-      color: #444;
+      color: #34495e;
       margin-bottom: 20px;
     }
 
-    .draggable-list {
-      list-style: none;
-      padding: 0;
-      margin-bottom: 20px;
-    }
-
-    .draggable-list li {
-      background-color: #ffffff;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 10px;
-      font-weight: 600;
-      color: #333;
-      cursor: grab;
+    .list {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      user-select: none;
-      transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .draggable-list li:active {
+    .item {
+      padding: 16px 20px;
+      background-color: #ffffff;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #2d3748;
+      cursor: grab;
+      user-select: none;
+      transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.1s ease;
+      touch-action: none;
+    }
+
+    .item:active {
       cursor: grabbing;
     }
 
-    .draggable-list li.dragging {
-      opacity: 0.4;
-      border-style: dashed;
+    .item.dragging {
+      opacity: 0.5;
+      transform: scale(1.02);
     }
 
-    .draggable-list li.correct {
+    .item.correct {
       background-color: #d4edda;
       border-color: #28a745;
       color: #155724;
     }
 
-    .victory-message {
+    .completion-message {
       display: none;
-      font-size: 1.25rem;
-      font-weight: bold;
-      color: #155724;
-      margin-top: 15px;
-      animation: fadeIn 0.5s ease-in-out;
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
 
-    .restart-btn {
-      display: none;
-      margin: 15px auto 0;
+    .completion-message h2 {
+      color: #27ae60;
+      margin-bottom: 5px;
+    }
+
+    .completion-message p {
+      color: #2c3e50;
+      font-size: 1.1rem;
+    }
+
+    button.reset-btn {
+      margin-top: 20px;
       padding: 10px 20px;
-      background-color: #28a745;
+      font-size: 0.95rem;
+      font-weight: 600;
       color: white;
+      background-color: #3498db;
       border: none;
       border-radius: 6px;
-      font-size: 1rem;
-      font-weight: bold;
       cursor: pointer;
-      transition: background-color 0.2s;
+      transition: background-color 0.2s ease;
     }
 
-    .restart-btn:hover {
-      background-color: #218838;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+    button.reset-btn:hover {
+      background-color: #2980b9;
     }
   </style>
 </head>
 <body>
 
   <div class="container">
-    <h1>Sequence Puzzle</h1>
-    <p class="instructions">Drag and drop the items to put them in the correct order from top to bottom.</p>
+    <h1>Arrange in Order</h1>
+    <p class="instructions">Drag and drop the items into the correct top-to-bottom sequence.</p>
+    <div class="timer" id="timer">Time: 0s</div>
 
-    <div class="timer" id="timer">Time: 0.0s</div>
+    <div class="list" id="sortable-list"></div>
 
-    <ul class="draggable-list" id="draggable-list"></ul>
-
-    <div class="victory-message" id="victory-message"></div>
-    <button class="restart-btn" id="restart-btn" onclick="initGame()">Play Again</button>
+    <div class="completion-message" id="completion-message">
+      <h2>Puzzle Solved!</h2>
+      <p id="final-time"></p>
+      <button class="reset-btn" onclick="initGame()">Play Again</button>
+    </div>
   </div>
 
   <script>
-    const targetOrder = [
+    const correctOrder = [
       "Was victorious",
       "Also",
       "Dessert served a’ la mode",
@@ -150,101 +155,52 @@
       "No, in German"
     ];
 
-    const listContainer = document.getElementById('draggable-list');
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let gameActive = false;
+
+    const listElement = document.getElementById('sortable-list');
     const timerElement = document.getElementById('timer');
-    const victoryMessage = document.getElementById('victory-message');
-    const restartBtn = document.getElementById('restart-btn');
+    const completionMessage = document.getElementById('completion-message');
+    const finalTimeElement = document.getElementById('final-time');
 
-    let startTime;
-    let timerInterval;
-    let gameWon = false;
-    let draggedItem = null;
+    function shuffleAndDerange(array) {
+      let items = [...array];
+      let isDeranged = false;
 
-    function initGame() {
-      // Reset State
-      gameWon = false;
-      document.body.classList.remove('victory');
-      victoryMessage.style.display = 'none';
-      restartBtn.style.display = 'none';
-      listContainer.innerHTML = '';
-      clearInterval(timerInterval);
-      
-      // Shuffle Items
-      const shuffled = [...targetOrder].sort(() => Math.random() - 0.5);
+      while (!isDeranged) {
+        // Fisher-Yates shuffle
+        for (let i = items.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [items[i], items[j]] = [items[j], items[i]];
+        }
 
-      // Render Items
-      shuffled.forEach((text) => {
-        const li = document.createElement('li');
-        li.setAttribute('draggable', 'true');
-        li.innerText = text;
-        listContainer.appendChild(li);
-      });
-
-      addDragListeners();
-      checkPositions();
-
-      // Start Timer
-      startTime = Date.now();
-      timerInterval = setInterval(updateTimer, 100);
-    }
-
-    function updateTimer() {
-      if (!gameWon) {
-        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        timerElement.innerText = `Time: ${elapsedTime}s`;
+        // Verify that NO item is in its correct original index
+        isDeranged = items.every((item, index) => item !== array[index]);
       }
+      return items;
     }
 
-    function addDragListeners() {
-      const items = listContainer.querySelectorAll('li');
-
-      items.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-          if (gameWon) return e.preventDefault();
-          draggedItem = item;
-          setTimeout(() => item.classList.add('dragging'), 0);
-        });
-
-        item.addEventListener('dragend', () => {
-          draggedItem = null;
-          item.classList.remove('dragging');
-          checkPositions();
-        });
-      });
-
-      listContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        if (gameWon) return;
-
-        const afterElement = getDragAfterElement(listContainer, e.clientY);
-        if (afterElement == null) {
-          listContainer.appendChild(draggedItem);
-        } else {
-          listContainer.insertBefore(draggedItem, afterElement);
-        }
-      });
+    function startTimer() {
+      clearInterval(timerInterval);
+      secondsElapsed = 0;
+      timerElement.textContent = `Time: 0s`;
+      timerInterval = setInterval(() => {
+        secondsElapsed++;
+        timerElement.textContent = `Time: ${secondsElapsed}s`;
+      }, 1000);
     }
 
-    function getDragAfterElement(container, y) {
-      const draggableElements = [...container.querySelectorAll('li:not(.dragging)')];
-
-      return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) {
-          return { offset: offset, element: child };
-        } else {
-          return closest;
-        }
-      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    function stopTimer() {
+      clearInterval(timerInterval);
     }
 
     function checkPositions() {
-      const currentItems = listContainer.querySelectorAll('li');
+      const currentItems = Array.from(listElement.children);
       let correctCount = 0;
 
       currentItems.forEach((item, index) => {
-        if (item.innerText === targetOrder[index]) {
+        if (item.textContent === correctOrder[index]) {
           item.classList.add('correct');
           correctCount++;
         } else {
@@ -252,28 +208,104 @@
         }
       });
 
-      if (correctCount === targetOrder.length && !gameWon) {
-        handleVictory();
+      if (correctCount === correctOrder.length && gameActive) {
+        gameActive = false;
+        stopTimer();
+        document.body.classList.add('victory');
+        finalTimeElement.textContent = `It took you ${secondsElapsed} seconds to complete.`;
+        completionMessage.style.display = 'block';
       }
     }
 
-    function handleVictory() {
-      gameWon = true;
-      clearInterval(timerInterval);
-      const finalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    function initGame() {
+      gameActive = true;
+      document.body.classList.remove('victory');
+      completionMessage.style.display = 'none';
 
-      document.body.classList.add('victory');
-      victoryMessage.innerText = `🎉 You completed the sequence in ${finalTime} seconds!`;
-      victoryMessage.style.display = 'block';
-      restartBtn.style.display = 'block';
+      const randomizedItems = shuffleAndDerange(correctOrder);
+      listElement.innerHTML = '';
 
-      // Lock drag state for finished game
-      const items = listContainer.querySelectorAll('li');
-      items.forEach(item => item.setAttribute('draggable', 'false'));
+      randomizedItems.forEach((text) => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        item.textContent = text;
+        item.draggable = true;
+
+        // Desktop Drag and Drop handlers
+        item.addEventListener('dragstart', () => {
+          item.classList.add('dragging');
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+          checkPositions();
+        });
+
+        listElement.appendChild(item);
+      });
+
+      setupTouchHandlers();
+      startTimer();
+      checkPositions();
+    }
+
+    // Drag-over logic for list reordering
+    listElement.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const draggingItem = document.querySelector('.dragging');
+      const siblings = [...listElement.querySelectorAll('.item:not(.dragging)')];
+
+      const nextSibling = siblings.find(sibling => {
+        const box = sibling.getBoundingClientRect();
+        return e.clientY <= box.top + box.height / 2;
+      });
+
+      if (nextSibling) {
+        listElement.insertBefore(draggingItem, nextSibling);
+      } else {
+        listElement.appendChild(draggingItem);
+      }
+    });
+
+    // Mobile / Touch support
+    function setupTouchHandlers() {
+      let activeTouchItem = null;
+
+      listElement.querySelectorAll('.item').forEach(item => {
+        item.addEventListener('touchstart', (e) => {
+          activeTouchItem = item;
+          item.classList.add('dragging');
+        }, { passive: true });
+
+        item.addEventListener('touchmove', (e) => {
+          if (!activeTouchItem) return;
+          const touchLocation = e.touches[0];
+          const siblings = [...listElement.querySelectorAll('.item:not(.dragging)')];
+
+          const nextSibling = siblings.find(sibling => {
+            const box = sibling.getBoundingClientRect();
+            return touchLocation.clientY <= box.top + box.height / 2;
+          });
+
+          if (nextSibling) {
+            listElement.insertBefore(activeTouchItem, nextSibling);
+          } else {
+            listElement.appendChild(activeTouchItem);
+          }
+        }, { passive: true });
+
+        item.addEventListener('touchend', () => {
+          if (activeTouchItem) {
+            activeTouchItem.classList.remove('dragging');
+            activeTouchItem = null;
+            checkPositions();
+          }
+        });
+      });
     }
 
     // Initialize on page load
-    window.onload = initGame;
+    initGame();
   </script>
 </body>
 </html>
