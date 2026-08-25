@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drag & Drop Sequence Game</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: #f4f6f9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      transition: background-color 0.5s ease;
+    }
+
+    body.victory {
+      background-color: #d4edda;
+    }
+
+    .container {
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    p.instructions {
+      font-size: 0.95rem;
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    .timer {
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #444;
+      margin-bottom: 20px;
+    }
+
+    .draggable-list {
+      list-style: none;
+      padding: 0;
+      margin-bottom: 20px;
+    }
+
+    .draggable-list li {
+      background-color: #ffffff;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 10px;
+      font-weight: 600;
+      color: #333;
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+    }
+
+    .draggable-list li:active {
+      cursor: grabbing;
+    }
+
+    .draggable-list li.dragging {
+      opacity: 0.4;
+      border-style: dashed;
+    }
+
+    .draggable-list li.correct {
+      background-color: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+
+    .victory-message {
+      display: none;
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: #155724;
+      margin-top: 15px;
+      animation: fadeIn 0.5s ease-in-out;
+    }
+
+    .restart-btn {
+      display: none;
+      margin: 15px auto 0;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .restart-btn:hover {
+      background-color: #218838;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Sequence Puzzle</h1>
+    <p class="instructions">Drag and drop the items to put them in the correct order from top to bottom.</p>
+
+    <div class="timer" id="timer">Time: 0.0s</div>
+
+    <ul class="draggable-list" id="draggable-list"></ul>
+
+    <div class="victory-message" id="victory-message"></div>
+    <button class="restart-btn" id="restart-btn" onclick="initGame()">Play Again</button>
+  </div>
+
+  <script>
+    const targetOrder = [
+      "Was victorious",
+      "Also",
+      "Dessert served a’ la mode",
+      "Something you shout after hitting a golf ball",
+      "Unleashes a dog on",
+      "Had food",
+      "No, in German"
+    ];
+
+    const listContainer = document.getElementById('draggable-list');
+    const timerElement = document.getElementById('timer');
+    const victoryMessage = document.getElementById('victory-message');
+    const restartBtn = document.getElementById('restart-btn');
+
+    let startTime;
+    let timerInterval;
+    let gameWon = false;
+    let draggedItem = null;
+
+    function initGame() {
+      // Reset State
+      gameWon = false;
+      document.body.classList.remove('victory');
+      victoryMessage.style.display = 'none';
+      restartBtn.style.display = 'none';
+      listContainer.innerHTML = '';
+      clearInterval(timerInterval);
+      
+      // Shuffle Items
+      const shuffled = [...targetOrder].sort(() => Math.random() - 0.5);
+
+      // Render Items
+      shuffled.forEach((text) => {
+        const li = document.createElement('li');
+        li.setAttribute('draggable', 'true');
+        li.innerText = text;
+        listContainer.appendChild(li);
+      });
+
+      addDragListeners();
+      checkPositions();
+
+      // Start Timer
+      startTime = Date.now();
+      timerInterval = setInterval(updateTimer, 100);
+    }
+
+    function updateTimer() {
+      if (!gameWon) {
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        timerElement.innerText = `Time: ${elapsedTime}s`;
+      }
+    }
+
+    function addDragListeners() {
+      const items = listContainer.querySelectorAll('li');
+
+      items.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+          if (gameWon) return e.preventDefault();
+          draggedItem = item;
+          setTimeout(() => item.classList.add('dragging'), 0);
+        });
+
+        item.addEventListener('dragend', () => {
+          draggedItem = null;
+          item.classList.remove('dragging');
+          checkPositions();
+        });
+      });
+
+      listContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (gameWon) return;
+
+        const afterElement = getDragAfterElement(listContainer, e.clientY);
+        if (afterElement == null) {
+          listContainer.appendChild(draggedItem);
+        } else {
+          listContainer.insertBefore(draggedItem, afterElement);
+        }
+      });
+    }
+
+    function getDragAfterElement(container, y) {
+      const draggableElements = [...container.querySelectorAll('li:not(.dragging)')];
+
+      return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          return { offset: offset, element: child };
+        } else {
+          return closest;
+        }
+      }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    function checkPositions() {
+      const currentItems = listContainer.querySelectorAll('li');
+      let correctCount = 0;
+
+      currentItems.forEach((item, index) => {
+        if (item.innerText === targetOrder[index]) {
+          item.classList.add('correct');
+          correctCount++;
+        } else {
+          item.classList.remove('correct');
+        }
+      });
+
+      if (correctCount === targetOrder.length && !gameWon) {
+        handleVictory();
+      }
+    }
+
+    function handleVictory() {
+      gameWon = true;
+      clearInterval(timerInterval);
+      const finalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      document.body.classList.add('victory');
+      victoryMessage.innerText = `🎉 You completed the sequence in ${finalTime} seconds!`;
+      victoryMessage.style.display = 'block';
+      restartBtn.style.display = 'block';
+
+      // Lock drag state for finished game
+      const items = listContainer.querySelectorAll('li');
+      items.forEach(item => item.setAttribute('draggable', 'false'));
+    }
+
+    // Initialize on page load
+    window.onload = initGame;
+  </script>
+</body>
+</html>
