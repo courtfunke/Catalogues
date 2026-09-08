@@ -1,4 +1,233 @@
-<script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Catalogues Master Game</title>
+    <!-- Include PeerJS library for serverless multiplayer via WebRTC -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --primary-color: #3b82f6;
+            --success-color: #22c55e;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .screen {
+            display: none;
+            width: 100%;
+            max-width: 600px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 12px;
+            transition: background-color 0.2s;
+        }
+
+        button:active {
+            opacity: 0.8;
+        }
+
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 14px;
+            font-size: 18px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        /* Sortable List Styling */
+        .word-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+
+        .word-card {
+            background-color: #f3f4f6;
+            border: 2px solid #e5e7eb;
+            padding: 16px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: 600;
+            cursor: grab;
+            touch-action: none;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+
+        .word-card.dragging {
+            opacity: 0.5;
+        }
+
+        .word-card.correct {
+            border: 4px solid var(--success-color) !important;
+            background-color: #f0fdf4;
+        }
+
+        /* Leaderboard Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f9fafb;
+        }
+
+        .timer {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ef4444;
+            margin: 10px 0;
+        }
+
+        .code-display {
+            font-size: 32px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            color: var(--primary-color);
+            background: #eff6ff;
+            padding: 10px;
+            border-radius: 8px;
+            display: inline-block;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ROLE SELECTION SCREEN -->
+    <div id="role-screen" class="screen active">
+        <h1>Catalogues Master Game</h1>
+        <p>Select your role to start playing:</p>
+        <button onclick="setupHost()">Host Game</button>
+        <button onclick="showPlayerJoin()">Player (Table)</button>
+    </div>
+
+    <!-- PLAYER JOIN SCREEN -->
+    <div id="join-screen" class="screen">
+        <h2>Join Game</h2>
+        <input type="text" id="host-code-input" placeholder="ENTER 4-LETTER ROOM CODE" style="text-transform: uppercase;">
+        <input type="text" id="table-name-input" placeholder="Enter Table / Player Name">
+        <button onclick="joinGame()">Join Room</button>
+    </div>
+
+    <!-- PLAYER WAITING AREA -->
+    <div id="waiting-screen" class="screen">
+        <h2>You are connected!</h2>
+        <p>Table Name: <strong id="player-display-name"></strong></p>
+        <p>Waiting for host to start the round...</p>
+    </div>
+
+    <!-- HOST CONTROL SCREEN -->
+    <div id="host-screen" class="screen">
+        <h2>Host Control Panel</h2>
+        <p>Room Code: <span id="room-code-display" class="code-display">----</span></p>
+        <div class="timer" id="host-timer">Time Remaining: 03:00</div>
+        <h3>Current Round: <span id="host-round-title">Practice Round</span></h3>
+        
+        <button id="start-round-btn" onclick="hostStartRound()">Start Round</button>
+        <button id="end-game-btn" onclick="hostEndGame()" style="background-color: #ef4444;">End Game & View Final Scores</button>
+
+        <h3>Players (<span id="player-count">0</span>)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table Name</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="host-leaderboard"></tbody>
+        </table>
+    </div>
+
+    <!-- PLAYER GAME SCREEN -->
+    <div id="game-screen" class="screen">
+        <div class="timer" id="player-timer">03:00</div>
+        <h2 id="player-round-title">Practice Round</h2>
+        <p>Drag or swipe words to arrange them in the correct order:</p>
+        
+        <ul class="word-list" id="word-list"></ul>
+        
+        <button id="check-btn" onclick="checkOrder()">CHECK</button>
+    </div>
+
+    <!-- RESULTS SCREEN -->
+    <div id="results-screen" class="screen">
+        <h2>Final Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Table Name</th>
+                    <th>Total Score</th>
+                    <th>Total Time</th>
+                </tr>
+            </thead>
+            <tbody id="final-leaderboard"></tbody>
+        </table>
+    </div>
+
+    <script>
     // ROUND DATA DEFINITION
     const ROUNDS = [
         { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
@@ -415,642 +644,6 @@
             tbody.appendChild(tr);
         });
     }
-</script><!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Catalogues Master Game</title>
-    <!-- Include PeerJS library for serverless multiplayer via WebRTC -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <style>
-        :root {
-            --bg-color: #f4f6f9;
-            --primary-color: #3b82f6;
-            --success-color: #22c55e;
-            --card-bg: #ffffff;
-            --text-color: #1f2937;
-        }
-
-        * {
-            box-sizing: border-box;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-        }
-
-        .screen {
-            display: none;
-            width: 100%;
-            max-width: 600px;
-            background: var(--card-bg);
-            padding: 24px;
-            border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.08);
-            text-align: center;
-        }
-
-        .screen.active {
-            display: block;
-        }
-
-        h1, h2, h3 {
-            margin-top: 0;
-        }
-
-        button {
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            padding: 14px 28px;
-            font-size: 18px;
-            font-weight: bold;
-            border-radius: 12px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 12px;
-            transition: background-color 0.2s;
-        }
-
-        button:active {
-            opacity: 0.8;
-        }
-
-        button:disabled {
-            background-color: #9ca3af;
-            cursor: not-allowed;
-        }
-
-        input[type="text"] {
-            width: 100%;
-            padding: 14px;
-            font-size: 18px;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            margin-bottom: 12px;
-            text-align: center;
-        }
-
-        /* Sortable List Styling */
-        .word-list {
-            list-style: none;
-            padding: 0;
-            margin: 20px 0;
-        }
-
-        .word-card {
-            background-color: #f3f4f6;
-            border: 2px solid #e5e7eb;
-            padding: 16px;
-            margin-bottom: 10px;
-            border-radius: 12px;
-            font-size: 20px;
-            font-weight: 600;
-            cursor: grab;
-            touch-action: none;
-            transition: border-color 0.2s, background-color 0.2s;
-        }
-
-        .word-card.dragging {
-            opacity: 0.5;
-        }
-
-        .word-card.correct {
-            border: 4px solid var(--success-color) !important;
-            background-color: #f0fdf4;
-        }
-
-        /* Leaderboard Table */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        th, td {
-            padding: 12px;
-            border-bottom: 1px solid #e5e7eb;
-            text-align: left;
-        }
-
-        th {
-            background-color: #f9fafb;
-        }
-
-        .timer {
-            font-size: 28px;
-            font-weight: bold;
-            color: #ef4444;
-            margin: 10px 0;
-        }
-
-        .code-display {
-            font-size: 32px;
-            font-weight: bold;
-            letter-spacing: 4px;
-            color: var(--primary-color);
-            background: #eff6ff;
-            padding: 10px;
-            border-radius: 8px;
-            display: inline-block;
-            margin: 10px 0;
-        }
-    </style>
-</head>
-<body>
-
-    <!-- ROLE SELECTION SCREEN -->
-    <div id="role-screen" class="screen active">
-        <h1>Catalogues Master Game</h1>
-        <p>Select your role to start playing:</p>
-        <button onclick="setupHost()">Host Game</button>
-        <button onclick="showPlayerJoin()">Player (Table)</button>
-    </div>
-
-    <!-- PLAYER JOIN SCREEN -->
-    <div id="join-screen" class="screen">
-        <h2>Join Game</h2>
-        <input type="text" id="host-code-input" placeholder="ENTER 4-LETTER ROOM CODE" style="text-transform: uppercase;">
-        <input type="text" id="table-name-input" placeholder="Enter Table / Player Name">
-        <button onclick="joinGame()">Join Room</button>
-    </div>
-
-    <!-- PLAYER WAITING AREA -->
-    <div id="waiting-screen" class="screen">
-        <h2>You are connected!</h2>
-        <p>Table Name: <strong id="player-display-name"></strong></p>
-        <p>Waiting for host to start the round...</p>
-    </div>
-
-    <!-- HOST CONTROL SCREEN -->
-    <div id="host-screen" class="screen">
-        <h2>Host Control Panel</h2>
-        <p>Room Code: <span id="room-code-display" class="code-display">----</span></p>
-        <div class="timer" id="host-timer">Time Remaining: 03:00</div>
-        <h3>Current Round: <span id="host-round-title">Practice Round</span></h3>
-        
-        <button id="start-round-btn" onclick="hostStartRound()">Start Round</button>
-        <button id="end-game-btn" onclick="hostEndGame()" style="background-color: #ef4444;">End Game & View Final Scores</button>
-
-        <h3>Players (<span id="player-count">0</span>)</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Table Name</th>
-                    <th>Score</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody id="host-leaderboard"></tbody>
-        </table>
-    </div>
-
-    <!-- PLAYER GAME SCREEN -->
-    <div id="game-screen" class="screen">
-        <div class="timer" id="player-timer">03:00</div>
-        <h2 id="player-round-title">Practice Round</h2>
-        <p>Drag or swipe words to arrange them in the correct order:</p>
-        
-        <ul class="word-list" id="word-list"></ul>
-        
-        <button id="check-btn" onclick="checkOrder()">CHECK</button>
-    </div>
-
-    <!-- RESULTS SCREEN -->
-    <div id="results-screen" class="screen">
-        <h2>Final Results</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>Table Name</th>
-                    <th>Total Score</th>
-                    <th>Total Time</th>
-                </tr>
-            </thead>
-            <tbody id="final-leaderboard"></tbody>
-        </table>
-    </div>
-
-    <script>
-        // ROUND DATA DEFINITION
-        const ROUNDS = [
-            { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
-            { title: "Round 1", words: ["Triangle", "Square", "Pentagon", "Hexagon", "Octagon", "Decagon", "Dodecogon"] },
-            { title: "Round 2", words: ["Gutter Ball", "Goal", "Safety", "Field Goal", "Grand Slam", "Touchdown", "Strike"] },
-            { title: "Round 3", words: ["Phoney", "Artwork", "Foursome", "Misevent", "Weight", "Canine", "Antenna"] },
-            { title: "Round 4", words: ["Avengers", "Avengers: Age of Ultron", "Avengers: Infinity War", "Avengers: Endgame", "Thunderbolts", "Avengers: Doomsday", "Avengers: Secret Wars"] }
-        ];
-
-        let peer = null;
-        let connections = []; // Host: track connected players
-        let hostConn = null;  // Player: track host connection
-        let isHost = false;
-        let myTableName = "";
-
-        // Game State
-        let currentRoundIdx = 0;
-        let playersData = {}; // { connId: { name, score, totalTime, finishedRound, roundTime, correctPositions: [] } }
-        let currentRoundWords = [];
-        let finishOrderCount = 0;
-        let timerInterval = null;
-        let timeLeft = 180;
-        let roundStartTime = 0;
-
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
-        }
-
-        function generateCode() {
-            return Math.random().toString(36).substring(2, 6).toUpperCase();
-        }
-
-        // ================= HOST CODE =================
-        function setupHost() {
-            isHost = true;
-            const code = generateCode();
-            document.getElementById('room-code-display').innerText = code;
-
-            peer = new Peer('cmg-' + code);
-
-            peer.on('open', () => {
-                showScreen('host-screen');
-                updateHostUI();
-            });
-
-            peer.on('connection', (conn) => {
-                conn.on('open', () => {
-                    connections.push(conn);
-                });
-
-                conn.on('data', (data) => handleHostMessage(conn, data));
-                
-                conn.on('close', () => {
-                    delete playersData[conn.peer];
-                    connections = connections.filter(c => c.peer !== conn.peer);
-                    updateHostLeaderboard();
-                });
-            });
-        }
-
-        function handleHostMessage(conn, data) {
-            if (data.type === 'JOIN') {
-                playersData[conn.peer] = {
-                    name: data.tableName,
-                    score: 0,
-                    totalTime: 0,
-                    finishedRound: false,
-                    correctPositions: [],
-                    timeTakenInRound: 180
-                };
-                updateHostLeaderboard();
-            } else if (data.type === 'SUBMIT_CHECK') {
-                const p = playersData[conn.peer];
-                p.correctPositions = data.correctPositions;
-
-                if (data.isComplete && !p.finishedRound) {
-                    p.finishedRound = true;
-                    finishOrderCount++;
-                    const timeTaken = Math.floor((Date.now() - roundStartTime) / 1000);
-                    p.timeTakenInRound = timeTaken;
-
-                    // Award Points (Non-practice rounds only)
-                    if (!ROUNDS[currentRoundIdx].isPractice) {
-                        p.totalTime += timeTaken;
-                        if (finishOrderCount === 1) p.score += 4;
-                        else if (finishOrderCount === 2) p.score += 3;
-                        else if (finishOrderCount === 3) p.score += 2;
-                        else p.score += 1;
-                    }
-
-                    // Check if round should end (3 players finished)
-                    if (finishOrderCount >= 3 || finishOrderCount >= Object.keys(playersData).length) {
-                        endRound();
-                    }
-                }
-                updateHostLeaderboard();
-            }
-        }
-
-        function hostStartRound() {
-            if (currentRoundIdx >= ROUNDS.length) return;
-
-            finishOrderCount = 0;
-            timeLeft = 180;
-            roundStartTime = Date.now();
-
-            const round = ROUNDS[currentRoundIdx];
-
-            // Reset player states for the round
-            Object.keys(playersData).forEach(id => {
-                playersData[id].finishedRound = false;
-                playersData[id].correctPositions = [];
-                playersData[id].timeTakenInRound = 180;
-            });
-
-            // Generate non-matching shuffled order
-            const shuffledWords = getValidShuffledWords(round.words);
-
-            broadcast({
-                type: 'START_ROUND',
-                roundIdx: currentRoundIdx,
-                title: round.title,
-                shuffledWords: shuffledWords,
-                targetWords: round.words
-            });
-
-            document.getElementById('host-round-title').innerText = round.title;
-            document.getElementById('start-round-btn').disabled = true;
-
-            startTimer(true);
-            updateHostLeaderboard();
-        }
-
-        function endRound() {
-            clearInterval(timerInterval);
-            
-            // Assign 1 point for non-finished players if timer ran out
-            if (!ROUNDS[currentRoundIdx].isPractice) {
-                Object.keys(playersData).forEach(id => {
-                    const p = playersData[id];
-                    if (!p.finishedRound) {
-                        p.score += 1;
-                        p.totalTime += 180;
-                    }
-                });
-            }
-
-            broadcast({ type: 'ROUND_ENDED' });
-
-            currentRoundIdx++;
-            if (currentRoundIdx < ROUNDS.length) {
-                document.getElementById('start-round-btn').innerText = `Start ${ROUNDS[currentRoundIdx].title}`;
-                document.getElementById('start-round-btn').disabled = false;
-            } else {
-                document.getElementById('start-round-btn').style.display = 'none';
-            }
-
-            updateHostLeaderboard();
-        }
-
-        function hostEndGame() {
-            clearInterval(timerInterval);
-            
-            // Format array for sorting
-            const finalResults = Object.values(playersData).sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
-                return a.totalTime - b.totalTime; // Tie-breaker: shortest time
-            });
-
-            broadcast({ type: 'GAME_OVER', results: finalResults });
-            showFinalResults(finalResults);
-        }
-
-        function updateHostLeaderboard() {
-            document.getElementById('player-count').innerText = Object.keys(playersData).length;
-            const tbody = document.getElementById('host-leaderboard');
-            tbody.innerHTML = '';
-
-            Object.values(playersData).forEach(p => {
-                const tr = document.createElement('tr');
-                let status = p.finishedRound ? "Finished" : "Playing";
-                tr.innerHTML = `<td>${p.name}</td><td>${p.score}</td><td>${status}</td>`;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function broadcast(data) {
-            connections.forEach(conn => conn.send(data));
-        }
-
-        // Shuffle logic: No word starts in correct position
-        function getValidShuffledWords(originalWords) {
-            let shuffled = [];
-            let isValid = false;
-
-            while (!isValid) {
-                shuffled = [...originalWords].sort(() => Math.random() - 0.5);
-                isValid = true;
-                for (let i = 0; i < originalWords.length; i++) {
-                    if (shuffled[i] === originalWords[i]) {
-                        isValid = false;
-                        break;
-                    }
-                }
-            }
-            return shuffled;
-        }
-
-        // ================= PLAYER CODE =================
-        function showPlayerJoin() {
-            showScreen('join-screen');
-        }
-
-        function joinGame() {
-            const code = document.getElementById('host-code-input').value.trim().toUpperCase();
-            myTableName = document.getElementById('table-name-input').value.trim();
-
-            if (!code || !myTableName) {
-                alert('Please enter both Room Code and Table Name.');
-                return;
-            }
-
-            peer = new Peer();
-
-            peer.on('open', () => {
-                hostConn = peer.connect('cmg-' + code);
-
-                hostConn.on('open', () => {
-                    document.getElementById('player-display-name').innerText = myTableName;
-                    showScreen('waiting-screen');
-                    hostConn.send({ type: 'JOIN', tableName: myTableName });
-                });
-
-                hostConn.on('data', (data) => handlePlayerMessage(data));
-            });
-        }
-
-        function handlePlayerMessage(data) {
-            if (data.type === 'START_ROUND') {
-                currentRoundWords = data.targetWords;
-                document.getElementById('player-round-title').innerText = data.title;
-                setupPlayerBoard(data.shuffledWords);
-                showScreen('game-screen');
-                document.getElementById('check-btn').disabled = false;
-                startTimer(false);
-            } else if (data.type === 'ROUND_ENDED') {
-                clearInterval(timerInterval);
-                showScreen('waiting-screen');
-            } else if (data.type === 'GAME_OVER') {
-                clearInterval(timerInterval);
-                showFinalResults(data.results);
-            }
-        }
-
-        function setupPlayerBoard(words) {
-            const list = document.getElementById('word-list');
-            list.innerHTML = '';
-            words.forEach((word) => {
-                const li = document.createElement('li');
-                li.className = 'word-card';
-                li.innerText = word;
-                li.draggable = true;
-                list.appendChild(li);
-            });
-            addDragAndDropHandlers();
-        }
-
-        function checkOrder() {
-            const items = document.querySelectorAll('.word-card');
-            let correctCount = 0;
-            let correctPositions = [];
-
-            items.forEach((item, idx) => {
-                if (item.innerText === currentRoundWords[idx]) {
-                    item.classList.add('correct');
-                    correctPositions.push(idx);
-                    correctCount++;
-                } else {
-                    item.classList.remove('correct');
-                }
-            });
-
-            const isComplete = correctCount === currentRoundWords.length;
-            if (isComplete) {
-                document.getElementById('check-btn').disabled = true;
-            }
-
-            hostConn.send({
-                type: 'SUBMIT_CHECK',
-                correctPositions: correctPositions,
-                isComplete: isComplete
-            });
-        }
-
-        // ================= DRAG AND DROP / TOUCH LOGIC =================
-        function addDragAndDropHandlers() {
-            const list = document.getElementById('word-list');
-            let draggedItem = null;
-
-            // Mouse Events
-            list.addEventListener('dragstart', (e) => {
-                draggedItem = e.target;
-                e.target.classList.add('dragging');
-            });
-
-            list.addEventListener('dragend', (e) => {
-                e.target.classList.remove('dragging');
-            });
-
-            list.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const afterElement = getDragAfterElement(list, e.clientY);
-                if (afterElement == null) {
-                    list.appendChild(draggedItem);
-                } else {
-                    list.insertBefore(draggedItem, afterElement);
-                }
-            });
-
-            // Touch Events (For iPads/Touch screens)
-            let touchItem = null;
-
-            list.addEventListener('touchstart', (e) => {
-                touchItem = e.target.closest('.word-card');
-                if (touchItem) touchItem.classList.add('dragging');
-            }, {passive: true});
-
-            list.addEventListener('touchmove', (e) => {
-                if (!touchItem) return;
-                const touch = e.touches[0];
-                const afterElement = getDragAfterElement(list, touch.clientY);
-                if (afterElement == null) {
-                    list.appendChild(touchItem);
-                } else {
-                    list.insertBefore(touchItem, afterElement);
-                }
-            }, {passive: true});
-
-            list.addEventListener('touchend', () => {
-                if (touchItem) {
-                    touchItem.classList.remove('dragging');
-                    touchItem = null;
-                }
-            });
-        }
-
-        function getDragAfterElement(container, y) {
-            const draggableElements = [...container.querySelectorAll('.word-card:not(.dragging)')];
-            return draggableElements.reduce((closest, child) => {
-                const box = child.getBoundingClientRect();
-                const offset = y - box.top - box.height / 2;
-                if (offset < 0 && offset > closest.offset) {
-                    return { offset: offset, element: child };
-                } else {
-                    return closest;
-                }
-            }, { offset: Number.NEGATIVE_INFINITY }).element;
-        }
-
-        // ================= TIMER & RESULTS =================
-        function startTimer(isHostTimer) {
-            clearInterval(timerInterval);
-            timeLeft = 180;
-            
-            updateTimerDisplay(isHostTimer);
-
-            timerInterval = setInterval(() => {
-                timeLeft--;
-                updateTimerDisplay(isHostTimer);
-
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    if (isHostTimer) endRound();
-                }
-            }, 1000);
-        }
-
-        function updateTimerDisplay(isHostTimer) {
-            const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
-            const seconds = String(timeLeft % 60).padStart(2, '0');
-            const text = `${minutes}:${seconds}`;
-
-            if (isHostTimer) {
-                document.getElementById('host-timer').innerText = `Time Remaining: ${text}`;
-            } else {
-                document.getElementById('player-timer').innerText = text;
-            }
-        }
-
-        function showFinalResults(results) {
-            showScreen('results-screen');
-            const tbody = document.getElementById('final-leaderboard');
-            tbody.innerHTML = '';
-
-            results.forEach((p, idx) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${idx + 1}</td>
-                    <td>${p.name}</td>
-                    <td>${p.score} pts</td>
-                    <td>${p.totalTime}s</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-    </script>
+</script>
 </body>
 </html>
