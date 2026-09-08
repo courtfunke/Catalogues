@@ -4,6 +4,644 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Catalogues Master Game</title>
+    <!-- Include PeerJS with reliable STUN configuration -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --primary-color: #2563eb;
+            --success-color: #16a34a;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .screen {
+            display: none;
+            width: 100%;
+            max-width: 600px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+
+        .screen.active { display: block; }
+
+        h1, h2, h3 { margin-top: 0; }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 16px 28px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 12px;
+            transition: opacity 0.2s;
+        }
+
+        button:active { opacity: 0.8; }
+        button:disabled { background-color: #9ca3af; cursor: not-allowed; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 14px;
+            font-size: 18px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        /* Sortable Word Cards */
+        .word-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+            min-height: 300px;
+        }
+
+        .word-card {
+            background-color: #f3f4f6;
+            border: 2px solid #cbd5e1;
+            padding: 16px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: 600;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        .word-card.correct {
+            border: 4px solid var(--success-color) !important;
+            background-color: #dc26260f;
+            background-color: #f0fdf4;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+
+        th { background-color: #f8fafc; }
+
+        .timer {
+            font-size: 28px;
+            font-weight: bold;
+            color: #dc2626;
+            margin: 10px 0;
+        }
+
+        .code-display {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: 6px;
+            color: var(--primary-color);
+            background: #eff6ff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            display: inline-block;
+            margin: 10px 0;
+            border: 2px dashed var(--primary-color);
+        }
+
+        .status-box {
+            background-color: #fef3c7;
+            color: #92400e;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SELECT ROLE -->
+    <div id="role-screen" class="screen active">
+        <h1>Catalogues Master Game</h1>
+        <p>Choose iPad Role:</p>
+        <button onclick="setupHost()">Host Game</button>
+        <button onclick="showPlayerJoin()">Player (Table)</button>
+    </div>
+
+    <!-- PLAYER JOIN -->
+    <div id="join-screen" class="screen">
+        <h2>Join Game</h2>
+        <input type="text" id="host-code-input" placeholder="ENTER ROOM CODE (e.g. A1B2)" style="text-transform: uppercase;" maxlength="4">
+        <input type="text" id="table-name-input" placeholder="Enter Table Name">
+        <button id="join-btn" onclick="joinGame()">Join Room</button>
+        <div id="status-box" class="status-box"></div>
+    </div>
+
+    <!-- WAITING SCREEN -->
+    <div id="waiting-screen" class="screen">
+        <h2>Connected!</h2>
+        <p>Table Name: <strong id="player-display-name"></strong></p>
+        <p>Waiting for the host to start the round...</p>
+    </div>
+
+    <!-- HOST SCREEN -->
+    <div id="host-screen" class="screen">
+        <h2>Host Control Panel</h2>
+        <p>Room Code:</p>
+        <div id="room-code-display" class="code-display">----</div>
+        <div class="timer" id="host-timer">Time Remaining: 03:00</div>
+        <h3>Current Round: <span id="host-round-title">Practice Round</span></h3>
+        
+        <button id="start-round-btn" onclick="hostStartRound()">Start Practice Round</button>
+        <button id="end-game-btn" onclick="hostEndGame()" style="background-color: #dc2626;">End Game & View Final Scores</button>
+
+        <h3>Players Connected (<span id="player-count">0</span>)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Table Name</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="host-leaderboard"></tbody>
+        </table>
+    </div>
+
+    <!-- GAME BOARD -->
+    <div id="game-screen" class="screen">
+        <div class="timer" id="player-timer">03:00</div>
+        <h2 id="player-round-title">Practice Round</h2>
+        <p>Drag / swipe words to place them in the correct order:</p>
+        
+        <ul class="word-list" id="word-list"></ul>
+        
+        <button id="check-btn" onclick="checkOrder()">CHECK</button>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="results-screen" class="screen">
+        <h2>Final Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Table Name</th>
+                    <th>Total Score</th>
+                    <th>Total Time</th>
+                </tr>
+            </thead>
+            <tbody id="final-leaderboard"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const ROUNDS = [
+            { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
+            { title: "Round 1", words: ["Triangle", "Square", "Pentagon", "Hexagon", "Octagon", "Decagon", "Dodecogon"] },
+            { title: "Round 2", words: ["Gutter Ball", "Goal", "Safety", "Field Goal", "Grand Slam", "Touchdown", "Strike"] },
+            { title: "Round 3", words: ["Phoney", "Artwork", "Foursome", "Misevent", "Weight", "Canine", "Antenna"] },
+            { title: "Round 4", words: ["Avengers", "Avengers: Age of Ultron", "Avengers: Infinity War", "Avengers: Endgame", "Thunderbolts", "Avengers: Doomsday", "Avengers: Secret Wars"] }
+        ];
+
+        // Public WebRTC ICE Config with Google STUN Servers
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
+        };
+
+        let peer = null;
+        let connections = {}; 
+        let hostConn = null;  
+        let isHost = false;
+        let myTableName = "";
+
+        let currentRoundIdx = 0;
+        let playersData = {}; 
+        let currentRoundWords = [];
+        let finishOrderCount = 0;
+        let timerInterval = null;
+        let timeLeft = 180;
+        let roundStartTime = 0;
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function setStatus(msg) {
+            const box = document.getElementById('status-box');
+            if (msg) {
+                box.style.display = 'block';
+                box.innerText = msg;
+            } else {
+                box.style.display = 'none';
+            }
+        }
+
+        function generateCode() {
+            const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            let res = "";
+            for (let i = 0; i < 4; i++) {
+                res += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return res;
+        }
+
+        // ================= HOST CODE =================
+        function setupHost() {
+            isHost = true;
+            const code = generateCode();
+            document.getElementById('room-code-display').innerText = code;
+
+            // Initialize Peer with unique ID prefix
+            peer = new Peer('cmg-' + code, peerConfig);
+
+            peer.on('open', () => {
+                showScreen('host-screen');
+                updateHostLeaderboard();
+            });
+
+            peer.on('connection', (conn) => {
+                conn.on('open', () => {
+                    connections[conn.peer] = conn;
+                });
+
+                conn.on('data', (data) => handleHostMessage(conn, data));
+
+                conn.on('close', () => {
+                    delete playersData[conn.peer];
+                    delete connections[conn.peer];
+                    updateHostLeaderboard();
+                });
+            });
+
+            peer.on('error', (err) => {
+                alert('Host Error: ' + err.type + '. Try refreshing page.');
+            });
+        }
+
+        function handleHostMessage(conn, data) {
+            if (data.type === 'JOIN') {
+                playersData[conn.peer] = {
+                    name: data.tableName,
+                    score: 0,
+                    totalTime: 0,
+                    finishedRound: false
+                };
+                conn.send({ type: 'JOIN_SUCCESS' });
+                updateHostLeaderboard();
+            } else if (data.type === 'SUBMIT_CHECK') {
+                const p = playersData[conn.peer];
+                if (data.isComplete && !p.finishedRound) {
+                    p.finishedRound = true;
+                    finishOrderCount++;
+                    const timeTaken = Math.floor((Date.now() - roundStartTime) / 1000);
+
+                    if (!ROUNDS[currentRoundIdx].isPractice) {
+                        p.totalTime += timeTaken;
+                        if (finishOrderCount === 1) p.score += 4;
+                        else if (finishOrderCount === 2) p.score += 3;
+                        else if (finishOrderCount === 3) p.score += 2;
+                        else p.score += 1;
+                    }
+
+                    if (finishOrderCount >= 3 || finishOrderCount >= Object.keys(playersData).length) {
+                        endRound();
+                    }
+                }
+                updateHostLeaderboard();
+            }
+        }
+
+        function hostStartRound() {
+            if (currentRoundIdx >= ROUNDS.length) return;
+
+            finishOrderCount = 0;
+            timeLeft = 180;
+            roundStartTime = Date.now();
+            const round = ROUNDS[currentRoundIdx];
+
+            Object.keys(playersData).forEach(id => {
+                playersData[id].finishedRound = false;
+            });
+
+            const shuffledWords = getValidShuffledWords(round.words);
+
+            broadcast({
+                type: 'START_ROUND',
+                title: round.title,
+                shuffledWords: shuffledWords,
+                targetWords: round.words
+            });
+
+            document.getElementById('host-round-title').innerText = round.title;
+            document.getElementById('start-round-btn').disabled = true;
+
+            startTimer(true);
+            updateHostLeaderboard();
+        }
+
+        function endRound() {
+            clearInterval(timerInterval);
+
+            if (!ROUNDS[currentRoundIdx].isPractice) {
+                Object.keys(playersData).forEach(id => {
+                    const p = playersData[id];
+                    if (!p.finishedRound) {
+                        p.score += 1;
+                        p.totalTime += 180;
+                    }
+                });
+            }
+
+            broadcast({ type: 'ROUND_ENDED' });
+
+            currentRoundIdx++;
+            if (currentRoundIdx < ROUNDS.length) {
+                document.getElementById('start-round-btn').innerText = `Start ${ROUNDS[currentRoundIdx].title}`;
+                document.getElementById('start-round-btn').disabled = false;
+            } else {
+                document.getElementById('start-round-btn').style.display = 'none';
+            }
+
+            updateHostLeaderboard();
+        }
+
+        function hostEndGame() {
+            clearInterval(timerInterval);
+
+            const results = Object.values(playersData).sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                return a.totalTime - b.totalTime;
+            });
+
+            broadcast({ type: 'GAME_OVER', results: results });
+            showFinalResults(results);
+        }
+
+        function updateHostLeaderboard() {
+            document.getElementById('player-count').innerText = Object.keys(playersData).length;
+            const tbody = document.getElementById('host-leaderboard');
+            tbody.innerHTML = '';
+
+            Object.values(playersData).forEach(p => {
+                const tr = document.createElement('tr');
+                let status = p.finishedRound ? "Finished" : "Playing";
+                tr.innerHTML = `<td>${p.name}</td><td>${p.score}</td><td>${status}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function broadcast(data) {
+            Object.values(connections).forEach(conn => conn.send(data));
+        }
+
+        // ================= PLAYER CODE =================
+        function showPlayerJoin() {
+            showScreen('join-screen');
+        }
+
+        function joinGame() {
+            const codeInput = document.getElementById('host-code-input').value.trim().toUpperCase();
+            myTableName = document.getElementById('table-name-input').value.trim();
+
+            if (!codeInput || !myTableName) {
+                alert('Please fill out both fields.');
+                return;
+            }
+
+            setStatus('Connecting to Host...');
+            document.getElementById('join-btn').disabled = true;
+
+            peer = new Peer(peerConfig);
+
+            peer.on('open', () => {
+                const hostPeerId = 'cmg-' + codeInput;
+                hostConn = peer.connect(hostPeerId, { reliable: true });
+
+                hostConn.on('open', () => {
+                    setStatus('Sending table name...');
+                    hostConn.send({ type: 'JOIN', tableName: myTableName });
+                });
+
+                hostConn.on('data', (data) => handlePlayerMessage(data));
+
+                hostConn.on('close', () => {
+                    alert('Connection to Host lost.');
+                });
+            });
+
+            peer.on('error', (err) => {
+                setStatus('');
+                document.getElementById('join-btn').disabled = false;
+                if (err.type === 'peer-not-found') {
+                    alert('Room Code not found! Ensure Host screen is created on Host iPad first.');
+                } else {
+                    alert('Error: ' + err.type);
+                }
+            });
+        }
+
+        function handlePlayerMessage(data) {
+            if (data.type === 'JOIN_SUCCESS') {
+                setStatus('');
+                document.getElementById('player-display-name').innerText = myTableName;
+                showScreen('waiting-screen');
+            } else if (data.type === 'START_ROUND') {
+                currentRoundWords = data.targetWords;
+                document.getElementById('player-round-title').innerText = data.title;
+                setupPlayerBoard(data.shuffledWords);
+                showScreen('game-screen');
+                document.getElementById('check-btn').disabled = false;
+                startTimer(false);
+            } else if (data.type === 'ROUND_ENDED') {
+                clearInterval(timerInterval);
+                showScreen('waiting-screen');
+            } else if (data.type === 'GAME_OVER') {
+                clearInterval(timerInterval);
+                showFinalResults(data.results);
+            }
+        }
+
+        function setupPlayerBoard(words) {
+            const list = document.getElementById('word-list');
+            list.innerHTML = '';
+            words.forEach((word) => {
+                const li = document.createElement('li');
+                li.className = 'word-card';
+                li.innerText = word;
+                list.appendChild(li);
+            });
+            addDragAndDropHandlers();
+        }
+
+        function checkOrder() {
+            const items = document.querySelectorAll('.word-card');
+            let correctCount = 0;
+
+            items.forEach((item, idx) => {
+                if (item.innerText === currentRoundWords[idx]) {
+                    item.classList.add('correct');
+                    correctCount++;
+                } else {
+                    item.classList.remove('correct');
+                }
+            });
+
+            const isComplete = correctCount === currentRoundWords.length;
+            if (isComplete) {
+                document.getElementById('check-btn').disabled = true;
+            }
+
+            hostConn.send({
+                type: 'SUBMIT_CHECK',
+                isComplete: isComplete
+            });
+        }
+
+        // ================= TOUCH/SWIPE DRAG HANDLERS =================
+        function addDragAndDropHandlers() {
+            const list = document.getElementById('word-list');
+            let activeItem = null;
+
+            list.querySelectorAll('.word-card').forEach(card => {
+                card.addEventListener('touchstart', (e) => {
+                    activeItem = card;
+                    card.style.opacity = '0.5';
+                }, {passive: true});
+
+                card.addEventListener('touchend', () => {
+                    if (activeItem) {
+                        activeItem.style.opacity = '1';
+                        activeItem = null;
+                    }
+                });
+            });
+
+            list.addEventListener('touchmove', (e) => {
+                if (!activeItem) return;
+                const touchY = e.touches[0].clientY;
+                const cards = [...list.querySelectorAll('.word-card')];
+                
+                cards.forEach(card => {
+                    if (card === activeItem) return;
+                    const rect = card.getBoundingClientRect();
+                    if (touchY >= rect.top && touchY <= rect.bottom) {
+                        if (touchY < rect.top + rect.height / 2) {
+                            list.insertBefore(activeItem, card);
+                        } else {
+                            list.insertBefore(activeItem, card.nextSibling);
+                        }
+                    }
+                });
+            }, {passive: true});
+        }
+
+        // ================= UTILS =================
+        function getValidShuffledWords(originalWords) {
+            let shuffled = [];
+            let isValid = false;
+
+            while (!isValid) {
+                shuffled = [...originalWords].sort(() => Math.random() - 0.5);
+                isValid = true;
+                for (let i = 0; i < originalWords.length; i++) {
+                    if (shuffled[i] === originalWords[i]) {
+                        isValid = false;
+                        break;
+                    }
+                }
+            }
+            return shuffled;
+        }
+
+        function startTimer(isHostTimer) {
+            clearInterval(timerInterval);
+            timeLeft = 180;
+            updateTimerDisplay(isHostTimer);
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay(isHostTimer);
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    if (isHostTimer) endRound();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay(isHostTimer) {
+            const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+            const seconds = String(timeLeft % 60).padStart(2, '0');
+            const text = `${minutes}:${seconds}`;
+
+            if (isHostTimer) {
+                document.getElementById('host-timer').innerText = `Time Remaining: ${text}`;
+            } else {
+                document.getElementById('player-timer').innerText = text;
+            }
+        }
+
+        function showFinalResults(results) {
+            showScreen('results-screen');
+            const tbody = document.getElementById('final-leaderboard');
+            tbody.innerHTML = '';
+
+            results.forEach((p, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td>${p.name}</td>
+                    <td>${p.score} pts</td>
+                    <td>${p.totalTime}s</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Catalogues Master Game</title>
     
     <!-- Firebase App & Database SDKs (v8 for direct browser compatibility) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
