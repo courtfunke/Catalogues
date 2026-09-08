@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Catalogues Master Game 2</title>
-    <!-- Include PeerJS library for serverless multiplayer via WebRTC -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>Catalogues Master Game</title>
+    
+    <!-- Firebase App & Database SDKs (v8 for direct browser compatibility) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
     <style>
         :root {
             --bg-color: #f4f6f9;
@@ -49,9 +52,7 @@
             display: block;
         }
 
-        h1, h2, h3 {
-            margin-top: 0;
-        }
+        h1, h2, h3 { margin-top: 0; }
 
         button {
             background-color: var(--primary-color);
@@ -67,14 +68,8 @@
             transition: background-color 0.2s;
         }
 
-        button:active {
-            opacity: 0.8;
-        }
-
-        button:disabled {
-            background-color: #9ca3af;
-            cursor: not-allowed;
-        }
+        button:active { opacity: 0.8; }
+        button:disabled { background-color: #9ca3af; cursor: not-allowed; }
 
         input[type="text"] {
             width: 100%;
@@ -86,7 +81,6 @@
             text-align: center;
         }
 
-        /* Sortable List Styling */
         .word-list {
             list-style: none;
             padding: 0;
@@ -106,16 +100,12 @@
             transition: border-color 0.2s, background-color 0.2s;
         }
 
-        .word-card.dragging {
-            opacity: 0.5;
-        }
-
+        .word-card.dragging { opacity: 0.5; }
         .word-card.correct {
             border: 4px solid var(--success-color) !important;
             background-color: #f0fdf4;
         }
 
-        /* Leaderboard Table */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -128,9 +118,7 @@
             text-align: left;
         }
 
-        th {
-            background-color: #f9fafb;
-        }
+        th { background-color: #f9fafb; }
 
         .timer {
             font-size: 28px;
@@ -150,11 +138,17 @@
             display: inline-block;
             margin: 10px 0;
         }
+
+        .status-msg {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
 
-    <!-- ROLE SELECTION SCREEN -->
+    <!-- ROLE SELECTION -->
     <div id="role-screen" class="screen active">
         <h1>Catalogues Master Game</h1>
         <p>Select your role to start playing:</p>
@@ -162,12 +156,13 @@
         <button onclick="showPlayerJoin()">Player (Table)</button>
     </div>
 
-    <!-- PLAYER JOIN SCREEN -->
+    <!-- PLAYER JOIN -->
     <div id="join-screen" class="screen">
         <h2>Join Game</h2>
-        <input type="text" id="host-code-input" placeholder="ENTER 4-LETTER ROOM CODE" style="text-transform: uppercase;">
+        <input type="text" id="host-code-input" placeholder="ENTER 4-LETTER ROOM CODE" style="text-transform: uppercase;" maxlength="4">
         <input type="text" id="table-name-input" placeholder="Enter Table / Player Name">
-        <button onclick="joinGame()">Join Room</button>
+        <button id="join-btn" onclick="joinGame()">Join Room</button>
+        <div id="join-status" class="status-msg"></div>
     </div>
 
     <!-- PLAYER WAITING AREA -->
@@ -184,7 +179,7 @@
         <div class="timer" id="host-timer">Time Remaining: 03:00</div>
         <h3>Current Round: <span id="host-round-title">Practice Round</span></h3>
         
-        <button id="start-round-btn" onclick="hostStartRound()">Start Round</button>
+        <button id="start-round-btn" onclick="hostStartRound()">Start Practice Round</button>
         <button id="end-game-btn" onclick="hostEndGame()" style="background-color: #ef4444;">End Game & View Final Scores</button>
 
         <h3>Players (<span id="player-count">0</span>)</h3>
@@ -228,422 +223,405 @@
     </div>
 
     <script>
-    // ROUND DATA DEFINITION
-    const ROUNDS = [
-        { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
-        { title: "Round 1", words: ["Triangle", "Square", "Pentagon", "Hexagon", "Octagon", "Decagon", "Dodecogon"] },
-        { title: "Round 2", words: ["Gutter Ball", "Goal", "Safety", "Field Goal", "Grand Slam", "Touchdown", "Strike"] },
-        { title: "Round 3", words: ["Phoney", "Artwork", "Foursome", "Misevent", "Weight", "Canine", "Antenna"] },
-        { title: "Round 4", words: ["Avengers", "Avengers: Age of Ultron", "Avengers: Infinity War", "Avengers: Endgame", "Thunderbolts", "Avengers: Doomsday", "Avengers: Secret Wars"] }
-    ];
+        // Auto-configuring open database for instant zero-setup connection
+        const firebaseConfig = {
+            databaseURL: "https://catalogues-master-game-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-    let peer = null;
-    let connections = []; 
-    let hostConn = null;  
-    let isHost = false;
-    let myTableName = "";
+        const ROUNDS = [
+            { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
+            { title: "Round 1", words: ["Triangle", "Square", "Pentagon", "Hexagon", "Octagon", "Decagon", "Dodecogon"] },
+            { title: "Round 2", words: ["Gutter Ball", "Goal", "Safety", "Field Goal", "Grand Slam", "Touchdown", "Strike"] },
+            { title: "Round 3", words: ["Phoney", "Artwork", "Foursome", "Misevent", "Weight", "Canine", "Antenna"] },
+            { title: "Round 4", words: ["Avengers", "Avengers: Age of Ultron", "Avengers: Infinity War", "Avengers: Endgame", "Thunderbolts", "Avengers: Doomsday", "Avengers: Secret Wars"] }
+        ];
 
-    let currentRoundIdx = 0;
-    let playersData = {}; 
-    let currentRoundWords = [];
-    let finishOrderCount = 0;
-    let timerInterval = null;
-    let timeLeft = 180;
-    let roundStartTime = 0;
+        let roomCode = "";
+        let playerId = "";
+        let myTableName = "";
+        let isHost = false;
 
-    function showScreen(screenId) {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById(screenId).classList.add('active');
-    }
+        let currentRoundIdx = 0;
+        let playersData = {};
+        let currentRoundWords = [];
+        let finishOrderCount = 0;
+        let timerInterval = null;
+        let timeLeft = 180;
+        let roundStartTime = 0;
 
-    function generateCode() {
-        return Math.random().toString(36).substring(2, 6).toUpperCase();
-    }
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
 
-    // ================= HOST CODE =================
-    function setupHost() {
-        isHost = true;
-        const code = generateCode();
-        document.getElementById('room-code-display').innerText = code;
+        function generateCode() {
+            return Math.random().toString(36).substring(2, 6).toUpperCase();
+        }
 
-        // PeerJS Setup
-        peer = new Peer('cmg-' + code, {
-            debug: 2
-        });
-
-        peer.on('open', (id) => {
+        // ================= HOST LOGIC =================
+        function setupHost() {
+            isHost = true;
+            roomCode = generateCode();
+            document.getElementById('room-code-display').innerText = roomCode;
             showScreen('host-screen');
-            updateHostUI();
-        });
 
-        peer.on('error', (err) => {
-            alert('Host Connection Error: ' + err.type + ' - ' + err.message);
-        });
-
-        peer.on('connection', (conn) => {
-            conn.on('open', () => {
-                connections.push(conn);
+            const roomRef = db.ref('rooms/' + roomCode);
+            roomRef.set({
+                status: 'waiting',
+                currentRoundIdx: 0,
+                createdAt: Date.now()
             });
 
-            conn.on('data', (data) => handleHostMessage(conn, data));
-            
-            conn.on('close', () => {
-                delete playersData[conn.peer];
-                connections = connections.filter(c => c.peer !== conn.peer);
+            // Clean up room when host leaves
+            roomRef.onDisconnect().remove();
+
+            // Listen for player joins and submits
+            db.ref('rooms/' + roomCode + '/players').on('value', (snapshot) => {
+                playersData = snapshot.val() || {};
                 updateHostLeaderboard();
-            });
-        });
-    }
 
-    function handleHostMessage(conn, data) {
-        if (data.type === 'JOIN') {
-            playersData[conn.peer] = {
-                name: data.tableName,
-                score: 0,
-                totalTime: 0,
-                finishedRound: false,
-                correctPositions: [],
-                timeTakenInRound: 180
-            };
-            updateHostLeaderboard();
-        } else if (data.type === 'SUBMIT_CHECK') {
-            const p = playersData[conn.peer];
-            p.correctPositions = data.correctPositions;
+                // Check round end conditions on host
+                let finishedCount = 0;
+                Object.values(playersData).forEach(p => {
+                    if (p.finishedRound) finishedCount++;
+                });
 
-            if (data.isComplete && !p.finishedRound) {
-                p.finishedRound = true;
-                finishOrderCount++;
-                const timeTaken = Math.floor((Date.now() - roundStartTime) / 1000);
-                p.timeTakenInRound = timeTaken;
-
-                if (!ROUNDS[currentRoundIdx].isPractice) {
-                    p.totalTime += timeTaken;
-                    if (finishOrderCount === 1) p.score += 4;
-                    else if (finishOrderCount === 2) p.score += 3;
-                    else if (finishOrderCount === 3) p.score += 2;
-                    else p.score += 1;
-                }
-
-                if (finishOrderCount >= 3 || finishOrderCount >= Object.keys(playersData).length) {
-                    endRound();
-                }
-            }
-            updateHostLeaderboard();
-        }
-    }
-
-    function hostStartRound() {
-        if (currentRoundIdx >= ROUNDS.length) return;
-
-        finishOrderCount = 0;
-        timeLeft = 180;
-        roundStartTime = Date.now();
-
-        const round = ROUNDS[currentRoundIdx];
-
-        Object.keys(playersData).forEach(id => {
-            playersData[id].finishedRound = false;
-            playersData[id].correctPositions = [];
-            playersData[id].timeTakenInRound = 180;
-        });
-
-        const shuffledWords = getValidShuffledWords(round.words);
-
-        broadcast({
-            type: 'START_ROUND',
-            roundIdx: currentRoundIdx,
-            title: round.title,
-            shuffledWords: shuffledWords,
-            targetWords: round.words
-        });
-
-        document.getElementById('host-round-title').innerText = round.title;
-        document.getElementById('start-round-btn').disabled = true;
-
-        startTimer(true);
-        updateHostLeaderboard();
-    }
-
-    function endRound() {
-        clearInterval(timerInterval);
-        
-        if (!ROUNDS[currentRoundIdx].isPractice) {
-            Object.keys(playersData).forEach(id => {
-                const p = playersData[id];
-                if (!p.finishedRound) {
-                    p.score += 1;
-                    p.totalTime += 180;
+                if (finishedCount >= 3 || (finishedCount > 0 && finishedCount >= Object.keys(playersData).length)) {
+                    if (document.getElementById('start-round-btn').disabled && timeLeft > 0) {
+                        endRound();
+                    }
                 }
             });
         }
 
-        broadcast({ type: 'ROUND_ENDED' });
+        function hostStartRound() {
+            if (currentRoundIdx >= ROUNDS.length) return;
 
-        currentRoundIdx++;
-        if (currentRoundIdx < ROUNDS.length) {
-            document.getElementById('start-round-btn').innerText = `Start ${ROUNDS[currentRoundIdx].title}`;
-            document.getElementById('start-round-btn').disabled = false;
-        } else {
-            document.getElementById('start-round-btn').style.display = 'none';
+            finishOrderCount = 0;
+            timeLeft = 180;
+            roundStartTime = Date.now();
+            const round = ROUNDS[currentRoundIdx];
+
+            // Reset round status for players
+            Object.keys(playersData).forEach(pid => {
+                db.ref(`rooms/${roomCode}/players/${pid}`).update({
+                    finishedRound: false,
+                    correctPositions: []
+                });
+            });
+
+            const shuffledWords = getValidShuffledWords(round.words);
+
+            db.ref('rooms/' + roomCode).update({
+                status: 'in_progress',
+                currentRoundIdx: currentRoundIdx,
+                roundTitle: round.title,
+                shuffledWords: shuffledWords,
+                targetWords: round.words,
+                startTime: Date.now()
+            });
+
+            document.getElementById('host-round-title').innerText = round.title;
+            document.getElementById('start-round-btn').disabled = true;
+
+            startTimer(true);
         }
 
-        updateHostLeaderboard();
-    }
+        function endRound() {
+            clearInterval(timerInterval);
 
-    function hostEndGame() {
-        clearInterval(timerInterval);
-        
-        const finalResults = Object.values(playersData).sort((a, b) => {
-            if (b.score !== a.score) return b.score - a.score;
-            return a.totalTime - b.totalTime;
-        });
+            // Award fallback 1 point for non-finished players
+            if (!ROUNDS[currentRoundIdx].isPractice) {
+                Object.keys(playersData).forEach(pid => {
+                    const p = playersData[pid];
+                    if (!p.finishedRound) {
+                        db.ref(`rooms/${roomCode}/players/${pid}`).update({
+                            score: (p.score || 0) + 1,
+                            totalTime: (p.totalTime || 0) + 180
+                        });
+                    }
+                });
+            }
 
-        broadcast({ type: 'GAME_OVER', results: finalResults });
-        showFinalResults(finalResults);
-    }
+            db.ref('rooms/' + roomCode).update({ status: 'round_ended' });
 
-    function updateHostLeaderboard() {
-        document.getElementById('player-count').innerText = Object.keys(playersData).length;
-        const tbody = document.getElementById('host-leaderboard');
-        tbody.innerHTML = '';
-
-        Object.values(playersData).forEach(p => {
-            const tr = document.createElement('tr');
-            let status = p.finishedRound ? "Finished" : "Playing";
-            tr.innerHTML = `<td>${p.name}</td><td>${p.score}</td><td>${status}</td>`;
-            tbody.appendChild(tr);
-        });
-    }
-
-    function broadcast(data) {
-        connections.forEach(conn => conn.send(data));
-    }
-
-    function getValidShuffledWords(originalWords) {
-        let shuffled = [];
-        let isValid = false;
-
-        while (!isValid) {
-            shuffled = [...originalWords].sort(() => Math.random() - 0.5);
-            isValid = true;
-            for (let i = 0; i < originalWords.length; i++) {
-                if (shuffled[i] === originalWords[i]) {
-                    isValid = false;
-                    break;
-                }
+            currentRoundIdx++;
+            if (currentRoundIdx < ROUNDS.length) {
+                document.getElementById('start-round-btn').innerText = `Start ${ROUNDS[currentRoundIdx].title}`;
+                document.getElementById('start-round-btn').disabled = false;
+            } else {
+                document.getElementById('start-round-btn').style.display = 'none';
             }
         }
-        return shuffled;
-    }
 
-    // ================= PLAYER CODE =================
-    function showPlayerJoin() {
-        showScreen('join-screen');
-    }
+        function hostEndGame() {
+            clearInterval(timerInterval);
 
-    function joinGame() {
-        const codeInput = document.getElementById('host-code-input').value.trim().toUpperCase();
-        myTableName = document.getElementById('table-name-input').value.trim();
+            const results = Object.values(playersData).sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                return a.totalTime - b.totalTime;
+            });
 
-        if (!codeInput || !myTableName) {
-            alert('Please enter both Room Code and Table Name.');
-            return;
+            db.ref('rooms/' + roomCode).update({
+                status: 'game_over',
+                finalResults: results
+            });
+
+            showFinalResults(results);
         }
 
-        peer = new Peer({ debug: 2 });
+        function updateHostLeaderboard() {
+            const playersArr = Object.values(playersData);
+            document.getElementById('player-count').innerText = playersArr.length;
+            const tbody = document.getElementById('host-leaderboard');
+            tbody.innerHTML = '';
 
-        peer.on('open', (id) => {
-            const hostPeerId = 'cmg-' + codeInput;
-            hostConn = peer.connect(hostPeerId, { reliable: true });
+            playersArr.forEach(p => {
+                const tr = document.createElement('tr');
+                let status = p.finishedRound ? "Finished" : "Playing";
+                tr.innerHTML = `<td>${p.name}</td><td>${p.score || 0}</td><td>${status}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
 
-            hostConn.on('open', () => {
+        // ================= PLAYER LOGIC =================
+        function showPlayerJoin() {
+            showScreen('join-screen');
+        }
+
+        function joinGame() {
+            const codeInput = document.getElementById('host-code-input').value.trim().toUpperCase();
+            myTableName = document.getElementById('table-name-input').value.trim();
+            const statusDiv = document.getElementById('join-status');
+
+            if (!codeInput || !myTableName) {
+                alert('Please enter both Room Code and Table Name.');
+                return;
+            }
+
+            statusDiv.innerText = "Connecting to room...";
+            document.getElementById('join-btn').disabled = true;
+
+            // Verify room exists
+            db.ref('rooms/' + codeInput).once('value', (snapshot) => {
+                if (!snapshot.exists()) {
+                    statusDiv.innerText = "";
+                    document.getElementById('join-btn').disabled = false;
+                    alert('Room Code not found! Please make sure the Host screen is open.');
+                    return;
+                }
+
+                roomCode = codeInput;
+                playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+
+                // Register player in Firebase
+                const playerRef = db.ref(`rooms/${roomCode}/players/${playerId}`);
+                playerRef.set({
+                    name: myTableName,
+                    score: 0,
+                    totalTime: 0,
+                    finishedRound: false
+                });
+
+                playerRef.onDisconnect().remove();
+
                 document.getElementById('player-display-name').innerText = myTableName;
                 showScreen('waiting-screen');
-                hostConn.send({ type: 'JOIN', tableName: myTableName });
+
+                // Listen to room updates
+                db.ref('rooms/' + roomCode).on('value', (roomSnap) => {
+                    const room = roomSnap.val();
+                    if (!room) return;
+
+                    if (room.status === 'in_progress') {
+                        currentRoundWords = room.targetWords;
+                        document.getElementById('player-round-title').innerText = room.roundTitle;
+                        setupPlayerBoard(room.shuffledWords);
+                        showScreen('game-screen');
+                        document.getElementById('check-btn').disabled = false;
+                        startTimer(false);
+                    } else if (room.status === 'round_ended') {
+                        clearInterval(timerInterval);
+                        showScreen('waiting-screen');
+                    } else if (room.status === 'game_over') {
+                        clearInterval(timerInterval);
+                        showFinalResults(room.finalResults || []);
+                    }
+                });
             });
-
-            hostConn.on('data', (data) => handlePlayerMessage(data));
-
-            hostConn.on('error', (err) => {
-                alert('Connection to Host failed: ' + err);
-            });
-        });
-
-        peer.on('error', (err) => {
-            if (err.type === 'peer-not-found') {
-                alert('Room Code not found! Make sure the host screen is open and active.');
-            } else {
-                alert('PeerJS Error: ' + err.type + ' - ' + err.message);
-            }
-        });
-    }
-
-    function handlePlayerMessage(data) {
-        if (data.type === 'START_ROUND') {
-            currentRoundWords = data.targetWords;
-            document.getElementById('player-round-title').innerText = data.title;
-            setupPlayerBoard(data.shuffledWords);
-            showScreen('game-screen');
-            document.getElementById('check-btn').disabled = false;
-            startTimer(false);
-        } else if (data.type === 'ROUND_ENDED') {
-            clearInterval(timerInterval);
-            showScreen('waiting-screen');
-        } else if (data.type === 'GAME_OVER') {
-            clearInterval(timerInterval);
-            showFinalResults(data.results);
-        }
-    }
-
-    function setupPlayerBoard(words) {
-        const list = document.getElementById('word-list');
-        list.innerHTML = '';
-        words.forEach((word) => {
-            const li = document.createElement('li');
-            li.className = 'word-card';
-            li.innerText = word;
-            li.draggable = true;
-            list.appendChild(li);
-        });
-        addDragAndDropHandlers();
-    }
-
-    function checkOrder() {
-        const items = document.querySelectorAll('.word-card');
-        let correctCount = 0;
-        let correctPositions = [];
-
-        items.forEach((item, idx) => {
-            if (item.innerText === currentRoundWords[idx]) {
-                item.classList.add('correct');
-                correctPositions.push(idx);
-                correctCount++;
-            } else {
-                item.classList.remove('correct');
-            }
-        });
-
-        const isComplete = correctCount === currentRoundWords.length;
-        if (isComplete) {
-            document.getElementById('check-btn').disabled = true;
         }
 
-        hostConn.send({
-            type: 'SUBMIT_CHECK',
-            correctPositions: correctPositions,
-            isComplete: isComplete
-        });
-    }
+        function checkOrder() {
+            const items = document.querySelectorAll('.word-card');
+            let correctCount = 0;
+            let correctPositions = [];
 
-    // ================= DRAG AND DROP / TOUCH LOGIC =================
-    function addDragAndDropHandlers() {
-        const list = document.getElementById('word-list');
-        let draggedItem = null;
+            items.forEach((item, idx) => {
+                if (item.innerText === currentRoundWords[idx]) {
+                    item.classList.add('correct');
+                    correctPositions.push(idx);
+                    correctCount++;
+                } else {
+                    item.classList.remove('correct');
+                }
+            });
 
-        list.addEventListener('dragstart', (e) => {
-            draggedItem = e.target;
-            e.target.classList.add('dragging');
-        });
+            const isComplete = correctCount === currentRoundWords.length;
+            if (isComplete) {
+                document.getElementById('check-btn').disabled = true;
+                
+                // Fetch player state to score correctly
+                db.ref(`rooms/${roomCode}`).once('value', (snap) => {
+                    const room = snap.val();
+                    const players = room.players || {};
+                    let finishedBefore = 0;
 
-        list.addEventListener('dragend', (e) => {
-            e.target.classList.remove('dragging');
-        });
+                    Object.values(players).forEach(p => {
+                        if (p.finishedRound) finishedBefore++;
+                    });
 
-        list.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = getDragAfterElement(list, e.clientY);
-            if (afterElement == null) {
-                list.appendChild(draggedItem);
-            } else {
-                list.insertBefore(draggedItem, afterElement);
+                    const timeTaken = Math.floor((Date.now() - room.startTime) / 1000);
+                    let pts = 1;
+                    if (!ROUNDS[room.currentRoundIdx].isPractice) {
+                        if (finishedBefore === 0) pts = 4;
+                        else if (finishedBefore === 1) pts = 3;
+                        else if (finishedBefore === 2) pts = 2;
+                    } else {
+                        pts = 0;
+                    }
+
+                    const myScore = (players[playerId].score || 0) + pts;
+                    const myTime = (players[playerId].totalTime || 0) + (ROUNDS[room.currentRoundIdx].isPractice ? 0 : timeTaken);
+
+                    db.ref(`rooms/${roomCode}/players/${playerId}`).update({
+                        finishedRound: true,
+                        score: myScore,
+                        totalTime: myTime
+                    });
+                });
             }
-        });
+        }
 
-        let touchItem = null;
+        function setupPlayerBoard(words) {
+            const list = document.getElementById('word-list');
+            list.innerHTML = '';
+            words.forEach((word) => {
+                const li = document.createElement('li');
+                li.className = 'word-card';
+                li.innerText = word;
+                list.appendChild(li);
+            });
+            addDragAndDropHandlers();
+        }
 
-        list.addEventListener('touchstart', (e) => {
-            touchItem = e.target.closest('.word-card');
-            if (touchItem) touchItem.classList.add('dragging');
-        }, {passive: true});
+        // ================= DRAG & TOUCH HANDLERS =================
+        function addDragAndDropHandlers() {
+            const list = document.getElementById('word-list');
+            let touchItem = null;
 
-        list.addEventListener('touchmove', (e) => {
-            if (!touchItem) return;
-            const touch = e.touches[0];
-            const afterElement = getDragAfterElement(list, touch.clientY);
-            if (afterElement == null) {
-                list.appendChild(touchItem);
-            } else {
-                list.insertBefore(touchItem, afterElement);
+            list.querySelectorAll('.word-card').forEach(card => {
+                card.addEventListener('touchstart', (e) => {
+                    touchItem = card;
+                    card.classList.add('dragging');
+                }, {passive: true});
+
+                card.addEventListener('touchend', () => {
+                    if (touchItem) {
+                        touchItem.classList.remove('dragging');
+                        touchItem = null;
+                    }
+                });
+            });
+
+            list.addEventListener('touchmove', (e) => {
+                if (!touchItem) return;
+                const touch = e.touches[0];
+                const afterElement = getDragAfterElement(list, touch.clientY);
+                if (afterElement == null) {
+                    list.appendChild(touchItem);
+                } else {
+                    list.insertBefore(touchItem, afterElement);
+                }
+            }, {passive: true});
+        }
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.word-card:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        // ================= UTILS =================
+        function getValidShuffledWords(originalWords) {
+            let shuffled = [];
+            let isValid = false;
+
+            while (!isValid) {
+                shuffled = [...originalWords].sort(() => Math.random() - 0.5);
+                isValid = true;
+                for (let i = 0; i < originalWords.length; i++) {
+                    if (shuffled[i] === originalWords[i]) {
+                        isValid = false;
+                        break;
+                    }
+                }
             }
-        }, {passive: true});
+            return shuffled;
+        }
 
-        list.addEventListener('touchend', () => {
-            if (touchItem) {
-                touchItem.classList.remove('dragging');
-                touchItem = null;
-            }
-        });
-    }
-
-    function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.word-card:not(.dragging)')];
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
-            }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
-    }
-
-    // ================= TIMER & RESULTS =================
-    function startTimer(isHostTimer) {
-        clearInterval(timerInterval);
-        timeLeft = 180;
-        
-        updateTimerDisplay(isHostTimer);
-
-        timerInterval = setInterval(() => {
-            timeLeft--;
+        function startTimer(isHostTimer) {
+            clearInterval(timerInterval);
+            timeLeft = 180;
             updateTimerDisplay(isHostTimer);
 
-            if (timeLeft <= 0) {
-                clearInterval(timerInterval);
-                if (isHostTimer) endRound();
-            }
-        }, 1000);
-    }
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay(isHostTimer);
 
-    function updateTimerDisplay(isHostTimer) {
-        const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
-        const seconds = String(timeLeft % 60).padStart(2, '0');
-        const text = `${minutes}:${seconds}`;
-
-        if (isHostTimer) {
-            document.getElementById('host-timer').innerText = `Time Remaining: ${text}`;
-        } else {
-            document.getElementById('player-timer').innerText = text;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    if (isHostTimer) endRound();
+                }
+            }, 1000);
         }
-    }
 
-    function showFinalResults(results) {
-        showScreen('results-screen');
-        const tbody = document.getElementById('final-leaderboard');
-        tbody.innerHTML = '';
+        function updateTimerDisplay(isHostTimer) {
+            const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+            const seconds = String(timeLeft % 60).padStart(2, '0');
+            const text = `${minutes}:${seconds}`;
 
-        results.forEach((p, idx) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${idx + 1}</td>
-                <td>${p.name}</td>
-                <td>${p.score} pts</td>
-                <td>${p.totalTime}s</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-</script>
+            if (isHostTimer) {
+                document.getElementById('host-timer').innerText = `Time Remaining: ${text}`;
+            } else {
+                document.getElementById('player-timer').innerText = text;
+            }
+        }
+
+        function showFinalResults(results) {
+            showScreen('results-screen');
+            const tbody = document.getElementById('final-leaderboard');
+            tbody.innerHTML = '';
+
+            results.forEach((p, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td>${p.name}</td>
+                    <td>${p.score || 0} pts</td>
+                    <td>${p.totalTime || 0}s</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
 </body>
 </html>
