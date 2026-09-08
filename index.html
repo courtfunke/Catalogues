@@ -1,4 +1,421 @@
-<!DOCTYPE html>
+<script>
+    // ROUND DATA DEFINITION
+    const ROUNDS = [
+        { title: "Practice Round (Not Scored)", words: ["1", "2", "3", "4", "5", "6", "7"], isPractice: true },
+        { title: "Round 1", words: ["Triangle", "Square", "Pentagon", "Hexagon", "Octagon", "Decagon", "Dodecogon"] },
+        { title: "Round 2", words: ["Gutter Ball", "Goal", "Safety", "Field Goal", "Grand Slam", "Touchdown", "Strike"] },
+        { title: "Round 3", words: ["Phoney", "Artwork", "Foursome", "Misevent", "Weight", "Canine", "Antenna"] },
+        { title: "Round 4", words: ["Avengers", "Avengers: Age of Ultron", "Avengers: Infinity War", "Avengers: Endgame", "Thunderbolts", "Avengers: Doomsday", "Avengers: Secret Wars"] }
+    ];
+
+    let peer = null;
+    let connections = []; 
+    let hostConn = null;  
+    let isHost = false;
+    let myTableName = "";
+
+    let currentRoundIdx = 0;
+    let playersData = {}; 
+    let currentRoundWords = [];
+    let finishOrderCount = 0;
+    let timerInterval = null;
+    let timeLeft = 180;
+    let roundStartTime = 0;
+
+    function showScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    function generateCode() {
+        return Math.random().toString(36).substring(2, 6).toUpperCase();
+    }
+
+    // ================= HOST CODE =================
+    function setupHost() {
+        isHost = true;
+        const code = generateCode();
+        document.getElementById('room-code-display').innerText = code;
+
+        // PeerJS Setup
+        peer = new Peer('cmg-' + code, {
+            debug: 2
+        });
+
+        peer.on('open', (id) => {
+            showScreen('host-screen');
+            updateHostUI();
+        });
+
+        peer.on('error', (err) => {
+            alert('Host Connection Error: ' + err.type + ' - ' + err.message);
+        });
+
+        peer.on('connection', (conn) => {
+            conn.on('open', () => {
+                connections.push(conn);
+            });
+
+            conn.on('data', (data) => handleHostMessage(conn, data));
+            
+            conn.on('close', () => {
+                delete playersData[conn.peer];
+                connections = connections.filter(c => c.peer !== conn.peer);
+                updateHostLeaderboard();
+            });
+        });
+    }
+
+    function handleHostMessage(conn, data) {
+        if (data.type === 'JOIN') {
+            playersData[conn.peer] = {
+                name: data.tableName,
+                score: 0,
+                totalTime: 0,
+                finishedRound: false,
+                correctPositions: [],
+                timeTakenInRound: 180
+            };
+            updateHostLeaderboard();
+        } else if (data.type === 'SUBMIT_CHECK') {
+            const p = playersData[conn.peer];
+            p.correctPositions = data.correctPositions;
+
+            if (data.isComplete && !p.finishedRound) {
+                p.finishedRound = true;
+                finishOrderCount++;
+                const timeTaken = Math.floor((Date.now() - roundStartTime) / 1000);
+                p.timeTakenInRound = timeTaken;
+
+                if (!ROUNDS[currentRoundIdx].isPractice) {
+                    p.totalTime += timeTaken;
+                    if (finishOrderCount === 1) p.score += 4;
+                    else if (finishOrderCount === 2) p.score += 3;
+                    else if (finishOrderCount === 3) p.score += 2;
+                    else p.score += 1;
+                }
+
+                if (finishOrderCount >= 3 || finishOrderCount >= Object.keys(playersData).length) {
+                    endRound();
+                }
+            }
+            updateHostLeaderboard();
+        }
+    }
+
+    function hostStartRound() {
+        if (currentRoundIdx >= ROUNDS.length) return;
+
+        finishOrderCount = 0;
+        timeLeft = 180;
+        roundStartTime = Date.now();
+
+        const round = ROUNDS[currentRoundIdx];
+
+        Object.keys(playersData).forEach(id => {
+            playersData[id].finishedRound = false;
+            playersData[id].correctPositions = [];
+            playersData[id].timeTakenInRound = 180;
+        });
+
+        const shuffledWords = getValidShuffledWords(round.words);
+
+        broadcast({
+            type: 'START_ROUND',
+            roundIdx: currentRoundIdx,
+            title: round.title,
+            shuffledWords: shuffledWords,
+            targetWords: round.words
+        });
+
+        document.getElementById('host-round-title').innerText = round.title;
+        document.getElementById('start-round-btn').disabled = true;
+
+        startTimer(true);
+        updateHostLeaderboard();
+    }
+
+    function endRound() {
+        clearInterval(timerInterval);
+        
+        if (!ROUNDS[currentRoundIdx].isPractice) {
+            Object.keys(playersData).forEach(id => {
+                const p = playersData[id];
+                if (!p.finishedRound) {
+                    p.score += 1;
+                    p.totalTime += 180;
+                }
+            });
+        }
+
+        broadcast({ type: 'ROUND_ENDED' });
+
+        currentRoundIdx++;
+        if (currentRoundIdx < ROUNDS.length) {
+            document.getElementById('start-round-btn').innerText = `Start ${ROUNDS[currentRoundIdx].title}`;
+            document.getElementById('start-round-btn').disabled = false;
+        } else {
+            document.getElementById('start-round-btn').style.display = 'none';
+        }
+
+        updateHostLeaderboard();
+    }
+
+    function hostEndGame() {
+        clearInterval(timerInterval);
+        
+        const finalResults = Object.values(playersData).sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return a.totalTime - b.totalTime;
+        });
+
+        broadcast({ type: 'GAME_OVER', results: finalResults });
+        showFinalResults(finalResults);
+    }
+
+    function updateHostLeaderboard() {
+        document.getElementById('player-count').innerText = Object.keys(playersData).length;
+        const tbody = document.getElementById('host-leaderboard');
+        tbody.innerHTML = '';
+
+        Object.values(playersData).forEach(p => {
+            const tr = document.createElement('tr');
+            let status = p.finishedRound ? "Finished" : "Playing";
+            tr.innerHTML = `<td>${p.name}</td><td>${p.score}</td><td>${status}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function broadcast(data) {
+        connections.forEach(conn => conn.send(data));
+    }
+
+    function getValidShuffledWords(originalWords) {
+        let shuffled = [];
+        let isValid = false;
+
+        while (!isValid) {
+            shuffled = [...originalWords].sort(() => Math.random() - 0.5);
+            isValid = true;
+            for (let i = 0; i < originalWords.length; i++) {
+                if (shuffled[i] === originalWords[i]) {
+                    isValid = false;
+                    break;
+                }
+            }
+        }
+        return shuffled;
+    }
+
+    // ================= PLAYER CODE =================
+    function showPlayerJoin() {
+        showScreen('join-screen');
+    }
+
+    function joinGame() {
+        const codeInput = document.getElementById('host-code-input').value.trim().toUpperCase();
+        myTableName = document.getElementById('table-name-input').value.trim();
+
+        if (!codeInput || !myTableName) {
+            alert('Please enter both Room Code and Table Name.');
+            return;
+        }
+
+        peer = new Peer({ debug: 2 });
+
+        peer.on('open', (id) => {
+            const hostPeerId = 'cmg-' + codeInput;
+            hostConn = peer.connect(hostPeerId, { reliable: true });
+
+            hostConn.on('open', () => {
+                document.getElementById('player-display-name').innerText = myTableName;
+                showScreen('waiting-screen');
+                hostConn.send({ type: 'JOIN', tableName: myTableName });
+            });
+
+            hostConn.on('data', (data) => handlePlayerMessage(data));
+
+            hostConn.on('error', (err) => {
+                alert('Connection to Host failed: ' + err);
+            });
+        });
+
+        peer.on('error', (err) => {
+            if (err.type === 'peer-not-found') {
+                alert('Room Code not found! Make sure the host screen is open and active.');
+            } else {
+                alert('PeerJS Error: ' + err.type + ' - ' + err.message);
+            }
+        });
+    }
+
+    function handlePlayerMessage(data) {
+        if (data.type === 'START_ROUND') {
+            currentRoundWords = data.targetWords;
+            document.getElementById('player-round-title').innerText = data.title;
+            setupPlayerBoard(data.shuffledWords);
+            showScreen('game-screen');
+            document.getElementById('check-btn').disabled = false;
+            startTimer(false);
+        } else if (data.type === 'ROUND_ENDED') {
+            clearInterval(timerInterval);
+            showScreen('waiting-screen');
+        } else if (data.type === 'GAME_OVER') {
+            clearInterval(timerInterval);
+            showFinalResults(data.results);
+        }
+    }
+
+    function setupPlayerBoard(words) {
+        const list = document.getElementById('word-list');
+        list.innerHTML = '';
+        words.forEach((word) => {
+            const li = document.createElement('li');
+            li.className = 'word-card';
+            li.innerText = word;
+            li.draggable = true;
+            list.appendChild(li);
+        });
+        addDragAndDropHandlers();
+    }
+
+    function checkOrder() {
+        const items = document.querySelectorAll('.word-card');
+        let correctCount = 0;
+        let correctPositions = [];
+
+        items.forEach((item, idx) => {
+            if (item.innerText === currentRoundWords[idx]) {
+                item.classList.add('correct');
+                correctPositions.push(idx);
+                correctCount++;
+            } else {
+                item.classList.remove('correct');
+            }
+        });
+
+        const isComplete = correctCount === currentRoundWords.length;
+        if (isComplete) {
+            document.getElementById('check-btn').disabled = true;
+        }
+
+        hostConn.send({
+            type: 'SUBMIT_CHECK',
+            correctPositions: correctPositions,
+            isComplete: isComplete
+        });
+    }
+
+    // ================= DRAG AND DROP / TOUCH LOGIC =================
+    function addDragAndDropHandlers() {
+        const list = document.getElementById('word-list');
+        let draggedItem = null;
+
+        list.addEventListener('dragstart', (e) => {
+            draggedItem = e.target;
+            e.target.classList.add('dragging');
+        });
+
+        list.addEventListener('dragend', (e) => {
+            e.target.classList.remove('dragging');
+        });
+
+        list.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(list, e.clientY);
+            if (afterElement == null) {
+                list.appendChild(draggedItem);
+            } else {
+                list.insertBefore(draggedItem, afterElement);
+            }
+        });
+
+        let touchItem = null;
+
+        list.addEventListener('touchstart', (e) => {
+            touchItem = e.target.closest('.word-card');
+            if (touchItem) touchItem.classList.add('dragging');
+        }, {passive: true});
+
+        list.addEventListener('touchmove', (e) => {
+            if (!touchItem) return;
+            const touch = e.touches[0];
+            const afterElement = getDragAfterElement(list, touch.clientY);
+            if (afterElement == null) {
+                list.appendChild(touchItem);
+            } else {
+                list.insertBefore(touchItem, afterElement);
+            }
+        }, {passive: true});
+
+        list.addEventListener('touchend', () => {
+            if (touchItem) {
+                touchItem.classList.remove('dragging');
+                touchItem = null;
+            }
+        });
+    }
+
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.word-card:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    // ================= TIMER & RESULTS =================
+    function startTimer(isHostTimer) {
+        clearInterval(timerInterval);
+        timeLeft = 180;
+        
+        updateTimerDisplay(isHostTimer);
+
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            updateTimerDisplay(isHostTimer);
+
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                if (isHostTimer) endRound();
+            }
+        }, 1000);
+    }
+
+    function updateTimerDisplay(isHostTimer) {
+        const minutes = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+        const seconds = String(timeLeft % 60).padStart(2, '0');
+        const text = `${minutes}:${seconds}`;
+
+        if (isHostTimer) {
+            document.getElementById('host-timer').innerText = `Time Remaining: ${text}`;
+        } else {
+            document.getElementById('player-timer').innerText = text;
+        }
+    }
+
+    function showFinalResults(results) {
+        showScreen('results-screen');
+        const tbody = document.getElementById('final-leaderboard');
+        tbody.innerHTML = '';
+
+        results.forEach((p, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td>${p.name}</td>
+                <td>${p.score} pts</td>
+                <td>${p.totalTime}s</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+</script><!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
